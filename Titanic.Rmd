@@ -1,0 +1,197 @@
+---
+title: "Titanic"
+author: "Mohab Diab"
+date: "April 16, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+```
+
+```{r}
+train <- read.csv("~/Desktop/Titanic/Titanic/Data/train.csv")
+test <- read.csv("~/Desktop/Titanic/Titanic/Data/test.csv")
+```
+
+```{r}
+all <- bind_rows(test, train)
+all
+```
+
+```{r}
+LT=dim(train)[1]
+```
+
+```{r}
+str(all)
+```
+
+```{r}
+colSums(is.na(all))
+```
+
+```{r}
+colSums(all=="")
+```
+
+```{r}
+all$Embarked
+```
+
+```{r}
+all$Embarked[all$Embarked == ''] = 'C'
+```
+
+```{r}
+apply(all,2, function(x) length(unique(x)))
+```
+
+```{r}
+as.factor(all$Pclass)
+as.factor(all$Sex)
+as.factor(all$Survived)
+as.factor(all$Embarked)
+
+```
+
+```{r}
+str(all)
+```
+
+```{r}
+ggplot(data = all, aes (x = Sex )) + geom_bar(fill = all$Survived)
+```
+
+```{r}
+ggplot(data = all[1:LT,],aes(x=Embarked,fill=Survived))+geom_bar(position="fill")+ylab("Frequency")
+```
+
+```{r}
+t<-table(all[1:LT,]$Embarked,all[1:LT,]$Survived)
+for (i in 1:dim(t)[1]){
+    t[i,]<-t[i,]/sum(t[i,])*100
+}
+t
+```
+
+```{r}
+ggplot(data = all[1:LT,],aes(x=Pclass), fill=Survived)+geom_bar(position="fill")+ylab("Frequency")
+```
+
+```{r}
+ggplot(data = all[1:LT,],aes(x=Embarked,color = Survived))+geom_bar(position="fill")+facet_wrap(~Pclass)
+```
+
+```{r}
+ggplot(data = all[1:LT,],aes(x=SibSp,fill=Survived))+geom_bar()
+```
+
+```{r}
+ggplot(data = all[1:LT,],aes(x=Parch,fill=Survived))+geom_bar()
+```
+
+```{r}
+all$Fare[is.na(all$Fare)] <- mean(all$Fare,na.rm=T)
+all$Age[is.na(all$Age)] <- mean(all$Age,na.rm=T)
+sum(is.na(all$Age))
+sum(is.na(all$Fare))
+```
+
+```{r}
+head(all$Name)
+```
+```{r}
+all$Title <- gsub('(.*, )|(\\..*)', '', all$Name)
+all$Title[all$Title == 'Mlle']<- 'Miss' 
+all$Title[all$Title == 'Ms']<- 'Miss'
+all$Title[all$Title == 'Mme']<- 'Mrs' 
+all$Title[all$Title == 'Lady']<- 'Miss'
+all$Title[all$Title == 'Dona']<- 'Miss'
+officer<- c('Capt','Col','Don','Dr','Jonkheer','Major','Rev','Sir','the Countess')
+all$Title[all$Title %in% officer]<-'Officer'
+
+all$Title<- as.factor(all$Title)
+
+ggplot(data = all[1:LT,],aes(x=Title,fill=Survived))+geom_bar(position="fill")+ylab("Frequency")
+
+```
+
+```{r}
+train_im<- all[1:LT,c("Survived","Pclass","Sex","Age","Fare","SibSp","Parch")]
+ind<-sample(1:dim(train_im)[1],500) # Sample of 500 out of 891
+train1<-train_im[ind,] # The train set of the model
+train2<-train_im[-ind,] # The test set of the model
+
+# Let's try to run a logistic regression
+model <- glm(Survived ~.,family=binomial(link='logit'),data=train1)
+summary(model)
+```
+
+```{r}
+pred.train <- predict(model,train2)
+pred.train <- ifelse(pred.train > 0.5,1,0)
+mean(pred.train==train2$Survived, na.rm = T)
+
+```
+
+```{r}
+t1<-table(pred.train,train2$Survived)
+# Presicion and recall of the model
+presicion<- t1[1,1]/(sum(t1[1,]))
+recall<- t1[1,1]/(sum(t1[,1]))
+presicion
+recall
+```
+
+```{r}
+F1<- 2*presicion*recall/(presicion+recall)
+F1
+```
+
+```{r}
+test_im<-all[LT+1:1309,c("Pclass","Sex","Age","SibSp","Parch","Fare")]
+
+pred.test <- predict(model,test_im)[1:418]
+pred.test <- ifelse(pred.test > 0.5,1,0)
+res<- data.frame(test$PassengerId,pred.test)
+names(res)<-c("PassengerId","Survived")
+write.csv(res,file="res.csv",row.names = F)
+```
+
+```{r}
+model_dt<- rpart(Survived ~.,data=train1, method="class")
+rpart.plot(model_dt)
+```
+
+```{r}
+pred.train.dt <- predict(model_dt,train2,type = "class")
+mean(pred.train.dt==train2$Survived, na.rm =  T)
+```
+
+```{r}
+t2<-table(pred.train.dt,train2$Survived)
+
+presicion_dt<- t2[1,1]/(sum(t2[1,]))
+recall_dt<- t2[1,1]/(sum(t2[,1]))
+presicion_dt
+recall_dt
+```
+
+```{r}
+F1_dt<- 2*presicion_dt*recall_dt/(presicion_dt+recall_dt)
+F1_dt
+```
+```{r}
+pred.test.dt <- predict(model_dt,test_im,type="class")[1:418]
+res_dt<- data.frame(test$PassengerId,pred.test.dt)
+names(res_dt)<-c("PassengerId","Survived")
+write.csv(res_dt,file="res_dt.csv",row.names = F)
+
+```
